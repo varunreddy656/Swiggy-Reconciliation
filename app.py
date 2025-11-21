@@ -100,7 +100,7 @@ def upload_files():
         else:
             if os.path.exists(output_path):
                 os.remove(output_path)
-            return jsonify({'errorgit rm -r --cached .
+            return jsonify({'error': 'your proper error message'})
 git add .
 ': result['message']}), 400
 
