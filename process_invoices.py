@@ -92,7 +92,7 @@ def map_values_to_cashflow(wb, data1_sheet, week):
         ["Total Customer Paid", "Complaint & Cancellation Charges"], 1, "sub"),
         "Less:- Discount": (["Restaurant Discounts", "Swiggy One Exclusive Offer Discount"], 2, "sum"),
         "Add:- GST 5%": (["GST Collected"], 2, "single"),
-        "Swiggy One fees": (["Swiggy One Fees"], 3, "single"),
+        "Swiggy One Fees": (["Swiggy One Fees"], 3, "single"),
         "Call Center Service Fees": (["Call Center Charges"], 3, "single"),
         "PocketHero Fee": (["Pocket Hero Fees"], 3, "single"),
         "Platform Fee": (["Commission"], 3, "single"),
