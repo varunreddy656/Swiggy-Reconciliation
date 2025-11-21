@@ -101,8 +101,6 @@ def upload_files():
             if os.path.exists(output_path):
                 os.remove(output_path)
             return jsonify({'error': 'your proper error message'})
-git add .
-': result['message']}), 400
 
     except Exception as e:
         shutil.rmtree(session_upload_folder, ignore_errors=True)
