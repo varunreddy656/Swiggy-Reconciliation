@@ -1,0 +1,10 @@
+# Ignore system files and folders
+AppData/
+Local Settings/
+Thumbs.db
+.DS_Store
+
+# Ignore Python cache and virtual environments
+__pycache__/
+*.pyc
+venv/

@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Invoice Reconciliation</title>
+  <style>
+    /* Basic styling */
+    body {
+      font-family: Arial, sans-serif;
+      background: #f7f9fc;
+      display: flex;
+      justify-content: center;
+      padding: 40px;
+    }
+    .container {
+      background: white;
+      border-radius: 12px;
+      padding: 30px;
+      max-width: 600px;
+      width: 100%;
+      box-shadow: 0 0 12px rgb(0 0 0 / 0.1);
+    }
+    h1 {
+      margin-bottom: 10px;
+      text-align: center;
+    }
+    .input-group {
+      margin-bottom: 15px;
+    }
+    label {
+      display: block;
+      font-weight: bold;
+      margin-bottom: 6px;
+    }
+    input[type="text"], input[type="file"] {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    .upload-area {
+      border: 2px dashed #aaa;
+      border-radius: 8px;
+      padding: 40px;
+      text-align: center;
+      cursor: pointer;
+      margin-bottom: 20px;
+      color: #666;
+    }
+    .upload-area.dragover {
+      background-color: #e6f0ff;
+      border-color: #4a90e2;
+      color: #222;
+    }
+    button {
+      background-color: #4a90e2;
+      border: none;
+      color: white;
+      padding: 15px;
+      font-size: 16px;
+      border-radius: 8px;
+      cursor: pointer;
+      width: 100%;
+    }
+    button:disabled {
+      background-color: #999;
+      cursor: not-allowed;
+    }
+    .file-list {
+      margin-bottom: 20px;
+    }
+    .file-item {
+      background-color: #f1f1f1;
+      margin: 3px 0;
+      padding: 8px;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    .status {
+      margin-top: 15px;
+      padding: 12px;
+      border-radius: 6px;
+      font-weight: bold;
+      display: none;
+    }
+    .status.success {
+      background-color: #d4edda;
+      color: #155724;
+      display: block;
+    }
+    .status.error {
+      background-color: #f8d7da;
+      color: #721c24;
+      display: block;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Invoice Reconciliation Automation</h1>
+    <form id="uploadForm" enctype="multipart/form-data">
+      <div class="input-group">
+        <label for="clientName">Client Name (Optional):</label>
+        <input type="text" id="clientName" name="clientName" placeholder="Enter client name here" />
+      </div>
+
+      <div class="upload-area" id="uploadArea" tabindex="0">
+        Drag and drop invoice Excel files here, or click to browse
+        <input type="file" id="fileInput" name="invoices" multiple accept=".xlsx" hidden />
+      </div>
+      <div class="file-list" id="fileList"></div>
+      <button type="submit" id="submitButton" disabled>Process Invoices</button>
+    </form>
+    <div class="status" id="status"></div>
+  </div>
+
+  <script>
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('fileInput');
+    const fileList = document.getElementById('fileList');
+    const submitButton = document.getElementById('submitButton');
+    const uploadForm = document.getElementById('uploadForm');
+    const status = document.getElementById('status');
+
+    // Show selected files
+    function updateFileList() {
+      const files = Array.from(fileInput.files);
+      if (files.length === 0) {
+        fileList.innerHTML = '';
+        submitButton.disabled = true;
+        return;
+      }
+      fileList.innerHTML = files.map(f => `<div class="file-item">${f.name}</div>`).join('');
+      submitButton.disabled = false;
+      status.style.display = 'none';
+      status.textContent = '';
+    }
+
+    uploadArea.addEventListener('click', () => fileInput.click());
+    uploadArea.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      uploadArea.classList.add('dragover');
+    });
+    uploadArea.addEventListener('dragleave', () => {
+      uploadArea.classList.remove('dragover');
+    });
+    uploadArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      uploadArea.classList.remove('dragover');
+      fileInput.files = e.dataTransfer.files;
+      updateFileList();
+    });
+    fileInput.addEventListener('change', updateFileList);
+
+    uploadForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (fileInput.files.length === 0) return;
+
+      submitButton.disabled = true;
+      submitButton.textContent = 'Processing...';
+      status.style.display = 'none';
+
+      const formData = new FormData(uploadForm);
+
+      try {
+        const response = await fetch('/upload', {
+          method: 'POST',
+          body: formData
+        });
+
+        if (response.ok) {
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'Reconciliation.xlsx';
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          window.URL.revokeObjectURL(url);
+
+          status.textContent = 'Success! File downloaded.';
+          status.className = 'status success';
+          uploadForm.reset();
+          fileList.innerHTML = '';
+          submitButton.disabled = true;
+        } else {
+          const errorData = await response.json();
+          throw new Error(errorData.error || 'Upload failed');
+        }
+      } catch (err) {
+        status.textContent = `Error: ${err.message}`;
+        status.className = 'status error';
+      } finally {
+        submitButton.disabled = false;
+        submitButton.textContent = 'Process Invoices';
+      }
+    });
+  </script>
+</body>
+</html>
