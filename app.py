@@ -7,15 +7,13 @@ import shutil
 from process_invoices import process_invoices_web
 
 app = Flask(__name__)
-app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max upload
+app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024
 app.config['SECRET_KEY'] = 'your-secret-key-change-this'
 
-# Folder configuration
 UPLOAD_FOLDER = 'temp/uploads'
 OUTPUT_FOLDER = 'temp/outputs'
 TEMPLATE_PATH = 'template_files/recon_template.xlsx'
 
-# Create necessary folders
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 os.makedirs('template_files', exist_ok=True)
@@ -31,23 +29,22 @@ def index():
 
 @app.route('/upload', methods=['POST'])
 def upload_files():
-    # Check if files were uploaded
+    # Validate files
     if 'invoices' not in request.files:
         return jsonify({'error': 'No files uploaded'}), 400
-
     files = request.files.getlist('invoices')
-
     if not files or files[0].filename == '':
         return jsonify({'error': 'No files selected'}), 400
 
-    client_name = request.form.get('clientName', '').strip()  # Optional client name
+    client_name = request.form.get('clientName', '').strip()
+    month = request.form.get('month', '').strip()
+    if not month:
+        return jsonify({'error': 'Month is required'}), 400
 
-    # Create unique session folder for this upload
     session_id = str(uuid.uuid4())
     session_upload_folder = os.path.join(UPLOAD_FOLDER, session_id)
     os.makedirs(session_upload_folder, exist_ok=True)
 
-    # Save uploaded files
     uploaded_count = 0
     for file in files:
         if file and allowed_file(file.filename):
@@ -59,36 +56,31 @@ def upload_files():
         shutil.rmtree(session_upload_folder, ignore_errors=True)
         return jsonify({'error': 'No valid Excel files (.xlsx) uploaded'}), 400
 
-    # Check if template exists
     if not os.path.exists(TEMPLATE_PATH):
         shutil.rmtree(session_upload_folder, ignore_errors=True)
-        return jsonify({'error': 'Template reconciliation file not found. Please contact administrator.'}), 500
+        return jsonify({'error': 'Template reconciliation file not found.'}), 500
 
-    # Process invoices
     output_filename = f"Reconciliation_{session_id}.xlsx"
     output_path = os.path.join(OUTPUT_FOLDER, output_filename)
 
     try:
-        # Call the processing function with client name
         result = process_invoices_web(
             invoice_folder_path=session_upload_folder,
             template_recon_path=TEMPLATE_PATH,
             output_path=output_path,
-            client_name=client_name
+            client_name=client_name,
+            month=month
         )
 
-        # Clean up uploaded files
         shutil.rmtree(session_upload_folder, ignore_errors=True)
 
         if result['success']:
-            # Send file to user
             response = send_file(
                 output_path,
                 as_attachment=True,
                 download_name='Reconciliation.xlsx',
                 mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
             )
-            # Clean up output file after sending
             @response.call_on_close
             def cleanup():
                 try:
@@ -100,7 +92,7 @@ def upload_files():
         else:
             if os.path.exists(output_path):
                 os.remove(output_path)
-            return jsonify({'error': 'your proper error message'})
+            return jsonify({'error': result.get('message', 'Processing failed')}), 400
 
     except Exception as e:
         shutil.rmtree(session_upload_folder, ignore_errors=True)

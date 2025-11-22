@@ -3,11 +3,9 @@ from pathlib import Path
 import re
 import shutil
 
-
 # ----------------- Helper Functions -----------------
 
 def extract_swiggy_start_day(filepath):
-    """Extract numeric starting day from Summary!C12"""
     try:
         wb = openpyxl.load_workbook(filepath, data_only=True, read_only=True)
         sheet = wb["Summary"]
@@ -15,12 +13,10 @@ def extract_swiggy_start_day(filepath):
         wb.close()
     except:
         return None
-
     m = re.search(r"(\d+)\s*.*?[-to]+\s*(\d+)", text, re.IGNORECASE)
     if m:
         return int(m.group(1))
     return None
-
 
 def detect_platform(fp):
     try:
@@ -35,7 +31,6 @@ def detect_platform(fp):
         return "Zomato"
     return None
 
-
 def clear_all_D_sheets(wb):
     sheets_to_remove = [sh for sh in wb.sheetnames if sh.startswith("D1W") or sh.startswith("D2W")]
     for sh_name in sheets_to_remove:
@@ -43,13 +38,37 @@ def clear_all_D_sheets(wb):
         wb.remove(std)
     print(f"Cleared {len(sheets_to_remove)} old D1W/D2W sheets.")
 
-
 def ensure_sheet(wb, name):
     if name in wb.sheetnames:
         return wb[name]
     else:
         return wb.create_sheet(name)
 
+def replace_month_in_sheets(wb, user_month):
+    """
+    Replace 'July' with user-provided month in specific sheets and cells.
+    Sheets to update: Summary, Cashflow, Profit statement, Discrepancies
+    """
+    sheets_to_update = ['Summary', 'Cashflow', 'Profit statement', 'Discrepancies']
+
+    for sheet_name in sheets_to_update:
+        if sheet_name not in wb.sheetnames:
+            print(f"Sheet '{sheet_name}' not found. Skipping.")
+            continue
+
+        sheet = wb[sheet_name]
+
+        if sheet_name == 'Summary':
+            cell_value = str(sheet['B2'].value) if sheet['B2'].value else ''
+            if 'July' in cell_value:
+                sheet['B2'].value = cell_value.replace('July', user_month)
+                print(f"Summary sheet B2 updated: 'July' → '{user_month}'")
+        else:
+            for row in sheet.iter_rows():
+                for cell in row:
+                    if cell.value and isinstance(cell.value, str) and 'July' in cell.value:
+                        cell.value = cell.value.replace('July', user_month)
+            print(f"Sheet '{sheet_name}': All 'July' replaced with '{user_month}'")
 
 def copy_data(src, tgt, start_row):
     max_row, max_col = src.max_row, src.max_column
@@ -57,7 +76,6 @@ def copy_data(src, tgt, start_row):
     for r in range(start_row, max_row + 1):
         for c in range(1, max_col + 1):
             tgt.cell(row=r - start_row + 1, column=c).value = src.cell(row=r, column=c).value
-
 
 def extract_total_orders(fp):
     try:
@@ -75,6 +93,25 @@ def extract_total_orders(fp):
     except Exception as e:
         print(f"Error extracting Total Orders from {fp.name}: {e}")
         return None
+
+# ------ Customer Complaints Counting Function ------
+def count_non_zero_complaints(sheet):
+    complaints_col = None
+    for col in range(1, sheet.max_column + 1):
+        cell_val = sheet.cell(row=5, column=col).value
+        # Match partial, case-insensitive, ignore spaces
+        if cell_val and "customer complaints" in str(cell_val).strip().lower():
+            complaints_col = col
+            break
+    if complaints_col is None:
+        print("Customer Complaints column not found in D1W sheet.")
+        return 0
+    count = 0
+    for row in range(6, sheet.max_row + 1):
+        value = sheet.cell(row=row, column=complaints_col).value
+        if isinstance(value, (int, float)) and value != 0:
+            count += 1
+    return count
 
 
 # ----------------- Calculations and Mapping -----------------
@@ -232,10 +269,7 @@ def perform_calculations_on_data1(wb, data1_sheet, week, recon_path):
 
     map_values_to_cashflow(wb, data1_sheet, week)
 
-
-# ----------------- Main Processing Function (Web Version) -----------------
-
-def process_invoices_web(invoice_folder_path, template_recon_path, output_path, client_name=None):
+def process_invoices_web(invoice_folder_path, template_recon_path, output_path, client_name=None, month=None):
     try:
         folder = Path(invoice_folder_path)
         shutil.copy2(template_recon_path, output_path)
@@ -253,7 +287,6 @@ def process_invoices_web(invoice_folder_path, template_recon_path, output_path, 
                     invoices.append((d, fp, plat))
                 else:
                     print(f"Skipping {fp.name}: Could not parse start day")
-
         if not invoices:
             return {
                 'success': False,
@@ -279,10 +312,10 @@ def process_invoices_web(invoice_folder_path, template_recon_path, output_path, 
 
         summary_sheet = ensure_sheet(recon, "Summary")
 
-        # New: write client name if given
         if client_name:
             summary_sheet.cell(row=1, column=2).value = client_name
 
+        # ------ MAIN LOOP ------
         for d, fp, plat in invoices:
             week = week_map[fp]
             print(f"\nProcessing {fp.name} → Week {week}")
@@ -293,6 +326,12 @@ def process_invoices_web(invoice_folder_path, template_recon_path, output_path, 
             d2 = ensure_sheet(recon, f"D2W{week}")
             copy_data(ol, d1, 3)
             copy_data(add, d2, 4)
+
+            complaint_count = count_non_zero_complaints(d1)
+            col_index = 3 + (week - 1)  # C=3, D=4, etc.
+            summary_sheet.cell(row=12, column=col_index).value = complaint_count
+            print(f"Week {week}: {complaint_count} non-zero customer complaints pasted into Summary {chr(64+col_index)}12")
+
             total_orders = extract_total_orders(fp)
             if total_orders is not None:
                 target_col = 2 + week
@@ -302,6 +341,10 @@ def process_invoices_web(invoice_folder_path, template_recon_path, output_path, 
                 print(f"Warning: Could not extract Total Orders from {fp.name}")
             wb_invoice.close()
             perform_calculations_on_data1(recon, d1, week, output_path)
+
+        # Replace July in sheets if month provided
+        if month:
+            replace_month_in_sheets(recon, month)
 
         recon.save(output_path)
         print("\n✔ DONE — Data copied, calculations performed, and Cashflow mapped successfully.\n")
